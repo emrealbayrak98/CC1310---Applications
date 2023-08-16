@@ -1,7 +1,7 @@
 /*
  * bmp180.h
  *
- *  Created on: 11 Aðu 2023
+ *  Created on: 11 AÄŸu 2023
  *      Author: emre
  */
 
@@ -81,13 +81,13 @@ typedef struct {
 
 
 // Private function prototypes
-uint8_t bmp180_init(I2C_Handle* i2c, bmp180_t *bmp180);
+uint8_t bmp180_init(I2C_Handle* i2c,I2C_Transaction* i2cTransaction, bmp180_t *bmp180);
 void bmp180_get_all(I2C_Handle* i2c,bmp180_t *bmp180);
 void bmp180_get_temperature(I2C_Handle* i2c,bmp180_t *bmp180);
 void bmp180_get_pressure(I2C_Handle* i2c,bmp180_t *bmp180);
 void bmp180_get_altitude(bmp180_t *bmp180);
 static void bmp180_read(I2C_Handle* i2c,bmp180_t *bmp180, uint8_t reg, uint8_t *rbuffer, uint8_t size);
-static void bmp180_write(I2C_Handle* i2c,bmp180_t *bmp180, uint8_t reg, uint8_t *buffer, uint8_t size);
+static void bmp180_write(I2C_Handle* i2c,bmp180_t *bmp180, uint8_t reg, uint8_t *buffer, size_t size);
 static int bmp180_is_ready(bmp180_t *bmp180);
 static int32_t _bmp180_read_ut(I2C_Handle* i2c,bmp180_t *bmp180);
 static int32_t _bmp180_read_up(I2C_Handle* i2c,bmp180_t *bmp180);

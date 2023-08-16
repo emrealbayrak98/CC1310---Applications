@@ -1,7 +1,7 @@
 /*
  * bmp180.c
  *
- *  Created on: 11 Aðu 2023
+ *  Created on: 11 AÄŸu 2023
  *      Author: emre
  */
 
@@ -47,7 +47,7 @@ static void bmp180_read(I2C_Handle* i2c,bmp180_t *bmp180, uint8_t reg, uint8_t *
  * @param uint8_t size = number writes that will be executed.
  * @note Bit '0' must be left empty before initializing
  * */
-static void bmp180_write(I2C_Handle* i2c,bmp180_t *bmp180, uint8_t reg, uint8_t *buffer, uint8_t size)
+static void bmp180_write(I2C_Handle* i2c,bmp180_t *bmp180, uint8_t reg, uint8_t *buffer, size_t size)
 {
     buffer[0] = reg;
     bmp180->i2cTransaction->writeBuf = buffer;
@@ -65,8 +65,9 @@ static void bmp180_write(I2C_Handle* i2c,bmp180_t *bmp180, uint8_t reg, uint8_t 
  * @param hi2cx I2C handle.
  * @param bmp180 `bmp180_t` struct to initialize.
  * */
-uint8_t bmp180_init(I2C_Handle* i2c, bmp180_t *bmp180)
+uint8_t bmp180_init(I2C_Handle* i2c, I2C_Transaction* i2cTransaction,bmp180_t *bmp180)
 {
+    bmp180->i2cTransaction = i2cTransaction;
     /* Perform Soft Reset*/
     buffer[1] = 0xB6;
     bmp180_write(i2c, bmp180, SOFT, buffer, 2);

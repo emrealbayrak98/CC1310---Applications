@@ -32,8 +32,9 @@ float  alt;
 void *mainThread(void *arg0)
 {
     /* Initialize I2C objects */
-    I2C_Handle      i2c;
-    I2C_Params      i2cParams;
+    I2C_Handle          i2c;
+    I2C_Params          i2cParams;
+    I2C_Transaction     i2cTransaction;
 
     /* Initialize BMP180 object */
     bmp180_t bmp180;
@@ -59,7 +60,7 @@ void *mainThread(void *arg0)
     /* Set parameters of BMP180*/
     bmp180.sea_pressure = 101325;
     bmp180.oversampling_setting =high_resolution;
-    if(bmp180_init(&i2c, (bmp180_t*)&bmp180)!=0){
+    if(bmp180_init(&i2c, &i2cTransaction, (bmp180_t*)&bmp180)!=0){
         while(1); // Init Failed.
     }
     while(1){
