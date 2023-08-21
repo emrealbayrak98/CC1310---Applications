@@ -33,15 +33,17 @@
 
 /* Application Header files */
 #include "RFQueue.h"
-#include "smartrf_settings/smartrf_settings.h"
+#include "smartrf_settings/smartrf_settings.h" /* Radio Setting are saved here */
 #include "application_settings.h"
 
 /***** Defines *****/
 #define TIMEOUT_MS             1000  /* Time limit for the Watchdog timer to reset. Must be bigger
                                      * than the Packet_Interval */
-#define SEA_LEVEL_PRESSURE     101325/* Sea level atm. pressure */
+#define SEA_LEVEL_PRESSURE     101325/* Sea level atm. pressure - Calibrate here */
+
+#define RELATIVE_OFFSET_ON     0x1   /* If the relative offset function want to be used, enable here*/
+
 /* Packet RX Configuration */
-#define DATA_ENTRY_HEADER_SIZE 8    /* Constant header size of a Generic Data Entry */
 #define MAX_LENGTH             13   /* Max length byte the radio will accept */
 #define NUM_DATA_ENTRIES       2    /* NOTE: Only two data entries supported at the moment */
 #define NUM_APPENDED_BYTES     4    /* The Data Entries data field will contain:
@@ -50,7 +52,7 @@
                                      * 1 status byte (RF_cmdPropRx.rxConf.bAppendStatus = 0x1) */
 
 /* Packet TX Configuration */
-#define PAYLOAD_LENGTH      13
+#define PAYLOAD_LENGTH      13      /* BMP180 sensor data buffer size */
 #define PACKET_INTERVAL     250000  /* Set packet interval to 250ms */
 
 /***** Prototypes *****/
@@ -61,11 +63,15 @@ static void floatToBytes(float value, uint8_t bytes[4]);
 
 /***** Global Variables *****/
 static uint32_t pressure;
-static float temp;
-static float alt;
+static float temperature;
+static float altitude;
 static uint8_t packet_sent[PAYLOAD_LENGTH];
 static uint8_t packet_received[MAX_LENGTH + NUM_APPENDED_BYTES - 1];  /* The length byte is stored in a separate variable */
 
+#if defined(RELATIVE_OFFSET_ON)
+  static uint8_t setOffsetFlag=0;
+  static uint16_t offsetValue=0;
+#endif
 /***** Variable declarations *****/
 static RF_Object rfObject;
 static RF_Handle rfHandle;
@@ -73,7 +79,7 @@ static RF_Handle rfHandle;
 /* Receive dataQueue for RF Core to fill in data */
 static dataQueue_t dataQueue;
 static rfc_dataEntryGeneral_t* currentDataEntry;
-static uint8_t packetLength;
+static uint8_t packetLength;                     /* Is not being used since our packet size is fixed.*/
 static uint8_t* packetDataPointer;
 
 /* Compiler Supports */
@@ -121,8 +127,6 @@ void watchdogCallback(uintptr_t watchdogHandle)
  */
 void *mainThread(void *arg0)
 {
-    setGPIO();
-
     /* Initialize I2C objects */
     I2C_Handle      i2c;
     I2C_Params      i2cParams;
@@ -138,6 +142,9 @@ void *mainThread(void *arg0)
     Watchdog_Handle watchdogHandle;
     Watchdog_Params WDparams;
     uint32_t        reloadValue;
+
+    /* Initialize GPIO */
+    setGPIO();
 
     /* Call driver init functions */
     GPIO_init();
@@ -159,7 +166,8 @@ void *mainThread(void *arg0)
 
     /* Set parameters of BMP180*/
     bmp180.sea_pressure = SEA_LEVEL_PRESSURE;
-    bmp180.oversampling_setting = standard;
+    bmp180.oversampling_setting = high_resolution;
+    /* higher settings introduce higher delays, also higher I2C bit rate is required.*/
 
     /* Open a BMP180 driver instance */
     if(bmp180_init(&i2c, &i2cTransaction, (bmp180_t*)&bmp180)!=0){
@@ -167,9 +175,9 @@ void *mainThread(void *arg0)
     }
 
     /* Set parameters of Watchdog */
-    WDparams.callbackFxn = (Watchdog_Callback) watchdogCallback;
+    WDparams.callbackFxn = (Watchdog_Callback) watchdogCallback; /* If reset mode is off, can be used to generate interrupt*/
     WDparams.debugStallMode = Watchdog_DEBUG_STALL_ON;
-    WDparams.resetMode = Watchdog_RESET_ON;
+    WDparams.resetMode = Watchdog_RESET_ON; /* Resets the board. Configure as desired*/
 
     /* Open a Watchdog driver instance */
     watchdogHandle = Watchdog_open(Board_WATCHDOG0, &WDparams);
@@ -205,8 +213,8 @@ void *mainThread(void *arg0)
     }
 
 
-    RF_cmdPropTx.pktLen = PAYLOAD_LENGTH;
-    RF_cmdPropTx.pPkt = packet_sent;
+    RF_cmdPropTx.pktLen = PAYLOAD_LENGTH;   /* Set packet length */
+    RF_cmdPropTx.pPkt = packet_sent;        /* Packet that is going to be send */
     RF_cmdPropTx.startTrigger.triggerType = TRIG_NOW;
 
 
@@ -234,16 +242,35 @@ void *mainThread(void *arg0)
     RF_postCmd(rfHandle, (RF_Op*)&RF_cmdFs, RF_PriorityNormal, NULL, 0);
 
     while(1){
+        #if defined(RELATIVE_OFFSET_ON)
+        if(setOffsetFlag == 1){
+            /* Take offset by sampling once */
+            bmp180_get_all(&i2c,&bmp180);
+            offsetValue = bmp180.altitude;
+            setOffsetFlag++;
+        }
+        if(setOffsetFlag == 3){
+            /* Reset offset & use default settings */
+            bmp180_get_all(&i2c,&bmp180);
+            offsetValue = 0;
+            setOffsetFlag = 0;
+        }
+        #endif
         /* Get all values from the sensor */
         bmp180_get_all(&i2c,&bmp180);
-        temp = bmp180.temperature;
+        temperature = bmp180.temperature;
         pressure = bmp180.pressure;
-        alt = bmp180.altitude;
+        #if defined(RELATIVE_OFFSET_ON)
+        /* Calculate relative altitude */
+        altitude = bmp180.altitude - offsetValue;
+        #else
+        altitude = bmp180.altitude;
+        #endif
 
         /* Convert the values */
-        floatToBytes(temp,packet_sent+1);
+        floatToBytes(temperature,packet_sent+1);
         floatToBytes(pressure,packet_sent+5);
-        floatToBytes(alt,packet_sent+9);
+        floatToBytes(altitude,packet_sent+9);
 
         Power_disablePolicy();
 
@@ -252,6 +279,7 @@ void *mainThread(void *arg0)
         /* Send packet */
         RF_EventMask terminationReason = RF_runCmd(rfHandle, (RF_Op*)&RF_cmdPropTx,
                                                    RF_PriorityHigh, NULL , 0);
+        /* Waits until the packet is received */
 
         /* Receive packet */
         RF_EventMask terminationReason2 = RF_runCmd(rfHandle, (RF_Op*)&RF_cmdPropRx,
@@ -289,7 +317,7 @@ void callbackRx(RF_Handle h, RF_CmdHandle ch, RF_EventMask e)
         memcpy(packet_received, packetDataPointer, (packetLength + 1));
 
         /* Write Application here if needed */
-        RFQueue_nextEntry();
+        RFQueue_nextEntry(); // Move to next entry
 
     }
 }
@@ -297,7 +325,16 @@ void callbackRx(RF_Handle h, RF_CmdHandle ch, RF_EventMask e)
 
 void gpioButtonFxn0(uint_least8_t index)
 {
-    /* Configure Here */
+#if defined(RELATIVE_OFFSET_ON)
+    if(setOffsetFlag == 0){
+        setOffsetFlag = 1;
+    }
+    else if(setOffsetFlag == 2){
+        setOffsetFlag = 3;
+    }
+
+#endif
+    /* Configure Here if needed*/
 }
 
 void *setGPIO()
@@ -307,6 +344,8 @@ void *setGPIO()
 
     /* Configure the LED and button pins */
     GPIO_setConfig(Board_GPIO_LED0, GPIO_CFG_OUT_STD | GPIO_CFG_OUT_LOW);
+
+#if defined(RELATIVE_OFFSET_ON)
     GPIO_setConfig(Board_GPIO_BUTTON0, GPIO_CFG_IN_PU | GPIO_CFG_IN_INT_FALLING);
 
 
@@ -315,7 +354,7 @@ void *setGPIO()
 
     /* Enable interrupts */
     GPIO_enableInt(Board_GPIO_BUTTON0);
-
+#endif
     return (NULL);
 }
 

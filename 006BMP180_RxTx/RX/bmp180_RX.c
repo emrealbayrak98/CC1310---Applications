@@ -37,7 +37,7 @@
 #include "application_settings.h"
 
 /* Uncomment the line below if MAX Capacity is needed. */
-//#define MAX_CAPACITY                           0x1        // Use max CAPACITY ie. Write raw data to RAM
+#define MAX_CAPACITY                           0x1        // Use max CAPACITY ie. Write raw data to RAM
 
 
 /***** Defines *****/
