@@ -62,9 +62,6 @@ void gpioButtonFxn0(uint_least8_t index);
 static void floatToBytes(float value, uint8_t bytes[4]);
 
 /***** Global Variables *****/
-static uint32_t pressure;
-static float temperature;
-static float altitude;
 static uint8_t packet_sent[PAYLOAD_LENGTH];
 static uint8_t packet_received[MAX_LENGTH + NUM_APPENDED_BYTES - 1];  /* The length byte is stored in a separate variable */
 
@@ -142,6 +139,11 @@ void *mainThread(void *arg0)
     Watchdog_Handle watchdogHandle;
     Watchdog_Params WDparams;
     uint32_t        reloadValue;
+
+    /* Define Sensor value variables */
+    static uint32_t pressure;
+    static float temperature;
+    static float altitude;
 
     /* Initialize GPIO */
     setGPIO();
@@ -247,13 +249,7 @@ void *mainThread(void *arg0)
             /* Take offset by sampling once */
             bmp180_get_all(&i2c,&bmp180);
             offsetValue = bmp180.altitude;
-            setOffsetFlag++;
-        }
-        if(setOffsetFlag == 3){
-            /* Reset offset & use default settings */
-            bmp180_get_all(&i2c,&bmp180);
-            offsetValue = 0;
-            setOffsetFlag = 0;
+            setOffsetFlag = 2;
         }
         #endif
         /* Get all values from the sensor */
@@ -327,10 +323,13 @@ void gpioButtonFxn0(uint_least8_t index)
 {
 #if defined(RELATIVE_OFFSET_ON)
     if(setOffsetFlag == 0){
+        /* Set offset in main thread */
         setOffsetFlag = 1;
     }
     else if(setOffsetFlag == 2){
-        setOffsetFlag = 3;
+        /* Clear offset */
+        offsetValue = 0;
+        setOffsetFlag = 0;
     }
 
 #endif
